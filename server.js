@@ -2,8 +2,59 @@ const express = require('express');
 const cors = require('cors');
 const math = require('mathjs');
 const path = require('path');
+const fetch = require('node-fetch');
+require('dotenv').config();
 // We'll use math.js more extensively and rely less on Algebrite
 const algebrite = require('algebrite');
+
+// Wolfram Alpha API configuration
+const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
+const WOLFRAM_API_URL = 'https://api.wolframalpha.com/v2/query';
+
+// Function to query Wolfram Alpha API
+async function queryWolframAlpha(input, format = 'plaintext') {
+  try {
+    const params = new URLSearchParams({
+      input,
+      appid: WOLFRAM_APP_ID,
+      format,
+      output: 'json',
+    });
+    
+    const response = await fetch(`${WOLFRAM_API_URL}?${params}`);
+    if (!response.ok) {
+      throw new Error(`Wolfram Alpha API error: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error querying Wolfram Alpha:', error);
+    throw error;
+  }
+}
+
+// Helper function to extract result from Wolfram Alpha response
+function extractWolframResult(data, podTitle) {
+  try {
+    if (!data.queryresult || data.queryresult.error) {
+      return null;
+    }
+    
+    const pods = data.queryresult.pods;
+    if (!pods) return null;
+    
+    const targetPod = pods.find(pod => pod.title === podTitle);
+    if (!targetPod || !targetPod.subpods || targetPod.subpods.length === 0) {
+      return null;
+    }
+    
+    return targetPod.subpods[0].plaintext;
+  } catch (error) {
+    console.error('Error extracting Wolfram result:', error);
+    return null;
+  }
+}
 
 // Helper function for polynomial expansion
 function expandPolynomial(expression) {
@@ -406,7 +457,7 @@ function generateSteps(operation, expression, variable = 'x') {
 }
 
 // Routes
-app.post('/api/calculate', (req, res) => {
+app.post('/api/calculate', async (req, res) => {
   try {
     const { expression, operation, variable = 'x', steps: wantSteps = false } = req.body;
     
@@ -438,7 +489,27 @@ app.post('/api/calculate', (req, res) => {
           const leftSide = equationParts[0].trim();
           const rightSide = equationParts[1].trim();
           
-          // Try using math.js first for solving equations
+          // Try Wolfram Alpha for complex equations first
+          if (WOLFRAM_APP_ID && (
+              expression.includes('^3') || 
+              expression.includes('^4') || 
+              expression.includes('sqrt') || 
+              (expression.match(/[a-zA-Z]/g) || []).length > 1)) {
+            try {
+              const wolframQuery = `solve ${expression} for ${variable}`;
+              const wolframData = await queryWolframAlpha(wolframQuery);
+              const wolframResult = extractWolframResult(wolframData, 'Solution');
+              
+              if (wolframResult) {
+                result = wolframResult.replace(/\s+/g, ' ').trim();
+                break;
+              }
+            } catch (wolframError) {
+              console.log('Wolfram Alpha solving failed:', wolframError);
+            }
+          }
+          
+          // Try using math.js if Wolfram Alpha fails or isn't available
           try {
             // Create a math.js expression for the equation
             const node = math.parse(`${leftSide} - (${rightSide})`);
@@ -596,7 +667,27 @@ app.post('/api/calculate', (req, res) => {
         
       case 'simplify':
         try {
-          // Try math.js first for simplification
+          // Try Wolfram Alpha for complex simplifications first
+          if (WOLFRAM_APP_ID && (
+              expression.includes('^3') || 
+              expression.includes('^4') || 
+              expression.includes('sqrt') || 
+              expression.includes('a') && expression.includes('b'))) {
+            try {
+              const wolframQuery = `simplify ${expression}`;
+              const wolframData = await queryWolframAlpha(wolframQuery);
+              const wolframResult = extractWolframResult(wolframData, 'Result');
+              
+              if (wolframResult) {
+                result = wolframResult.replace(/\s+/g, ' ').trim();
+                break;
+              }
+            } catch (wolframError) {
+              console.log('Wolfram Alpha simplification failed:', wolframError);
+            }
+          }
+          
+          // Try math.js if Wolfram Alpha fails or isn't available
           try {
             // Parse the expression
             const node = math.parse(processedExpression);
@@ -756,7 +847,26 @@ app.post('/api/calculate', (req, res) => {
         
       case 'expand':
         try {
-          // Use math.js for expansion
+          // Try Wolfram Alpha for complex expansions first
+          if (WOLFRAM_APP_ID && (
+              expression.includes('^3') || 
+              expression.includes('^4') || 
+              expression.includes('a') && expression.includes('b'))) {
+            try {
+              const wolframQuery = `expand ${expression}`;
+              const wolframData = await queryWolframAlpha(wolframQuery);
+              const wolframResult = extractWolframResult(wolframData, 'Result');
+              
+              if (wolframResult) {
+                result = wolframResult.replace(/\s+/g, ' ').trim();
+                break;
+              }
+            } catch (wolframError) {
+              console.log('Wolfram Alpha expansion failed:', wolframError);
+            }
+          }
+          
+          // Use math.js if Wolfram Alpha fails or isn't available
           try {
             // Parse the expression
             const node = math.parse(processedExpression);
@@ -863,7 +973,33 @@ app.post('/api/calculate', (req, res) => {
         
       case 'factor':
         try {
-          // Use math.js for factoring if possible
+          // Try Wolfram Alpha for complex factoring first
+          if (WOLFRAM_APP_ID && (
+              expression.includes('^3') || 
+              expression.includes('^4') || 
+              expression.includes('a') && expression.includes('b'))) {
+            try {
+              const wolframQuery = `factor ${expression}`;
+              const wolframData = await queryWolframAlpha(wolframQuery);
+              const wolframResult = extractWolframResult(wolframData, 'Factored form');
+              
+              if (!wolframResult) {
+                // Try alternate pod titles
+                const altResult = extractWolframResult(wolframData, 'Result');
+                if (altResult) {
+                  result = altResult.replace(/\s+/g, ' ').trim();
+                  break;
+                }
+              } else {
+                result = wolframResult.replace(/\s+/g, ' ').trim();
+                break;
+              }
+            } catch (wolframError) {
+              console.log('Wolfram Alpha factoring failed:', wolframError);
+            }
+          }
+          
+          // Use math.js for factoring if Wolfram Alpha fails or isn't available
           try {
             // First try to identify common factoring patterns using math.js
             const node = math.parse(processedExpression);

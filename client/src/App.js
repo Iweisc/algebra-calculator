@@ -253,7 +253,7 @@ function App() {
       </main>
       
       <footer className="App-footer">
-        <p>Powered by Algebrite - A symbolic algebra engine</p>
+        <p>Powered by Algebrite, Math.js, and Wolfram Alpha</p>
         <p>© 2025 Algebra Calculator</p>
       </footer>
     </div>

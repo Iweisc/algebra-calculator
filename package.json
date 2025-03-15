@@ -23,7 +23,9 @@
     "algebrite": "^1.4.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "mathjs": "^12.1.0"
+    "mathjs": "^12.1.0",
+    "node-fetch": "^2.6.9",
+    "dotenv": "^16.0.3"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

@@ -13,7 +13,10 @@ const ExampleLinks = ({ onExampleClick }) => {
     { text: '(a+b-c)^2', expression: '(a+b-c)^2' },
     { text: 'x^2-4', expression: 'x^2-4' },
     { text: 'sin(x) @ x=pi/4', expression: 'sin(x) @ x=pi/4' },
-    { text: 'x^2 @ x=-5:5', expression: 'x^2 @ x=-5:5' }
+    { text: 'x^2 @ x=-5:5', expression: 'x^2 @ x=-5:5' },
+    { text: 'a^3 + b^3', expression: 'a^3 + b^3' },
+    { text: 'x^3 - 8', expression: 'x^3 - 8' },
+    { text: 'x^4 - 16', expression: 'x^4 - 16' }
   ];
 
   return (
