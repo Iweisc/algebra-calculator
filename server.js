@@ -44,7 +44,18 @@ app.post('/api/calculate', (req, res) => {
         break;
         
       case 'expand':
-        result = math.expand(expression).toString();
+        // Use the correct method for expansion
+        try {
+          const parsed = math.parse(expression);
+          result = parsed.transform(node => {
+            if (node.isParenthesisNode) {
+              return math.parse(math.simplify(`${node}^1`).toString());
+            }
+            return node;
+          }).toString();
+        } catch (error) {
+          throw new Error(`Could not expand expression: ${error.message}`);
+        }
         break;
         
       case 'factor':
