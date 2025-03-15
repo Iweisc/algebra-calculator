@@ -514,25 +514,34 @@ app.post('/api/calculate', async (req, res) => {
           
           // Try using math.js if Wolfram Alpha fails or isn't available
           try {
-            // Create a math.js expression for the equation
-            const node = math.parse(`${leftSide} - (${rightSide})`);
-            
-            // Try to solve using math.js
-            const solutions = math.simplify(node, {}, {context: {[variable]: true}});
-            
-            if (solutions && solutions.length > 0) {
-              // Format the solutions
-              result = solutions.map(sol => {
-                // Try to simplify each solution
-                try {
-                  return math.simplify(sol.toString()).toString();
-                } catch (e) {
-                  return sol.toString();
-                }
-              }).join(', ');
+            // For simple equations, try direct approach
+            if (!processedExpression.includes('^') && 
+                !processedExpression.includes('*') && 
+                processedExpression.split(variable).length <= 3) {
               
-              break;
+              // Rearrange to standard form: ax + b = 0
+              const equation = `${leftSide} - (${rightSide})`;
+              
+              // Try to extract the coefficient and constant
+              const simplified = math.simplify(equation).toString();
+              
+              // Extract variable term and constant
+              const varTermMatch = simplified.match(new RegExp(`([+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable})`, 'g'));
+              const constMatch = simplified.match(/([+-]?\s*[0-9.]+)(?!\s*\*?\s*[a-zA-Z])/g);
+              
+              if (varTermMatch && constMatch) {
+                const varCoeff = math.evaluate(varTermMatch[0].replace(variable, '1'));
+                const constTerm = math.evaluate(constMatch[0]);
+                
+                if (varCoeff !== 0) {
+                  result = (-constTerm / varCoeff).toString();
+                  break;
+                }
+              }
             }
+            
+            // If simple approach fails, try using Algebrite directly
+            // as math.simplify with context is not reliable
           } catch (mathError) {
             console.log('Math.js solving failed:', mathError);
           }
@@ -692,11 +701,11 @@ app.post('/api/calculate', async (req, res) => {
           
           // Try math.js if Wolfram Alpha fails or isn't available
           try {
-            // Check if this is a symbolic expression with variables like a, b
-            const hasSymbolicVars = /[a-df-wyz]/.test(processedExpression); // Excludes e and x which are special in math.js
+            // Always use Algebrite for symbolic expressions to avoid undefined variable errors
+            const hasSymbolicVars = /[a-zA-Z]/.test(processedExpression);
             
             if (hasSymbolicVars) {
-              // For symbolic expressions with variables like a, b, use Algebrite
+              // For symbolic expressions with variables, use Algebrite
               const algebriteResult = algebrite.simplify(processedExpression).toString();
               result = algebriteResult;
               break;
@@ -1155,7 +1164,7 @@ app.post('/api/calculate', async (req, res) => {
             try {
               // Create a scope with default values for common variables
               const fullScope = {
-                a: 0, b: 0, c: 0, d: 0, m: 0, n: 0, p: 0, q: 0, r: 0, s: 0, t: 0,
+                a: 1, b: 1, c: 1, d: 1, m: 1, n: 1, p: 1, q: 1, r: 1, s: 1, t: 1,
                 ...scope
               };
               
