@@ -85,7 +85,7 @@ function App() {
             <li><strong>Evaluate:</strong> 2 + 2 * 3</li>
             <li><strong>Solve:</strong> x + 5 = 10</li>
             <li><strong>Simplify:</strong> 2x + 3x</li>
-            <li><strong>Expand:</strong> (x+y)^3 or (x+1)^2</li>
+            <li><strong>Expand:</strong> (x+y)^3, (x+1)^2, or (a+b-c)^2</li>
           </ul>
         </div>
       </main>
