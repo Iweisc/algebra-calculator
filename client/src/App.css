@@ -1,60 +1,93 @@
 .App {
   text-align: center;
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
 .App-header {
-  background-color: #282c34;
+  background-color: #4285f4;
   padding: 20px;
   color: white;
   border-radius: 8px 8px 0 0;
   margin-bottom: 20px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .App-header h1 {
   margin: 0;
   font-size: 2rem;
+  font-weight: 500;
 }
 
 .calculator-container {
   background-color: white;
   border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  padding: 25px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
-.form-group {
+.calculator-form {
   margin-bottom: 20px;
-  text-align: left;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: bold;
-}
-
-.select-operation {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 16px;
+.input-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
 }
 
 .expression-input {
-  width: 100%;
-  padding: 10px;
+  flex: 1;
+  padding: 12px 15px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  font-size: 18px;
+  box-sizing: border-box;
+  transition: border-color 0.3s;
+}
+
+.expression-input:focus {
+  border-color: #4285f4;
+  outline: none;
+}
+
+.keypad-toggle {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0 15px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.keypad-toggle:hover {
+  background-color: #e9e9e9;
+}
+
+.variable-selector {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+  justify-content: flex-start;
+}
+
+.variable-selector label {
+  margin-right: 10px;
+  font-weight: 500;
+}
+
+.variable-selector select {
+  padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 16px;
-  box-sizing: border-box;
 }
 
 .calculate-btn {
-  background-color: #4CAF50;
+  background-color: #4285f4;
   color: white;
   border: none;
   padding: 12px 20px;
@@ -64,43 +97,95 @@
   width: 100%;
   margin-bottom: 20px;
   transition: background-color 0.3s;
+  font-weight: 500;
 }
 
 .calculate-btn:hover {
-  background-color: #45a049;
+  background-color: #3367d6;
 }
 
 .calculate-btn:disabled {
-  background-color: #cccccc;
+  background-color: #a4c2f4;
   cursor: not-allowed;
 }
 
 .error-message {
   color: #d32f2f;
   margin: 15px 0;
-  padding: 10px;
+  padding: 15px;
   background-color: #ffebee;
   border-radius: 4px;
   text-align: left;
+  border-left: 4px solid #d32f2f;
 }
 
 .result-container {
   margin-top: 20px;
-  padding: 15px;
-  background-color: #e8f5e9;
-  border-radius: 4px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
   text-align: left;
+  border: 1px solid #e0e0e0;
 }
 
-.result-container h3 {
-  margin-top: 0;
-  color: #2e7d32;
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.result-header h3 {
+  margin: 0;
+  color: #202124;
+  font-weight: 500;
+}
+
+.steps-toggle-btn {
+  background-color: #4285f4;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.steps-toggle-btn:hover {
+  background-color: #3367d6;
 }
 
 .result {
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 20px;
+  font-weight: 500;
   word-break: break-word;
+  padding: 10px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.steps-container {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.steps-container h4 {
+  margin-top: 0;
+  color: #4285f4;
+}
+
+.steps-container ol {
+  padding-left: 20px;
+}
+
+.steps-container li {
+  margin-bottom: 10px;
+  line-height: 1.5;
 }
 
 .help-section {
@@ -110,14 +195,41 @@
   padding-top: 20px;
 }
 
-.help-section h3 {
-  margin-top: 0;
+.help-section h3, .help-section h4 {
+  color: #202124;
 }
 
-.help-section ul {
-  padding-left: 20px;
+.help-section p {
+  line-height: 1.6;
 }
 
-.help-section li {
-  margin-bottom: 8px;
+.help-section a {
+  color: #4285f4;
+  text-decoration: none;
+}
+
+.help-section a:hover {
+  text-decoration: underline;
+}
+
+.symbols-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  padding-left: 0;
+  list-style-type: none;
+}
+
+.symbols-list li {
+  padding: 8px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.App-footer {
+  margin-top: 30px;
+  padding: 20px;
+  color: #70757a;
+  font-size: 14px;
+  border-top: 1px solid #eee;
 }

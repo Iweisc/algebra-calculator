@@ -1,0 +1,44 @@
+.math-keypad {
+  margin: 20px 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  background-color: #f9f9f9;
+}
+
+.keypad-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.keypad-key {
+  flex: 1;
+  margin: 2px;
+  padding: 12px 0;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.keypad-key:hover {
+  background-color: #f0f0f0;
+}
+
+.keypad-key:active {
+  background-color: #e0e0e0;
+}
+
+.wide-key {
+  flex: 2;
+}
+
+@media (max-width: 600px) {
+  .keypad-key {
+    padding: 10px 0;
+    font-size: 16px;
+  }
+}

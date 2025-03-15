@@ -145,12 +145,105 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Helper function to generate step-by-step solutions
+function generateSteps(operation, expression, variable = 'x') {
+  const steps = [];
+  
+  try {
+    switch (operation) {
+      case 'solve':
+        // Generate steps for solving equations
+        const equationParts = expression.split('=');
+        if (equationParts.length !== 2) {
+          return [];
+        }
+        
+        const leftSide = equationParts[0].trim();
+        const rightSide = equationParts[1].trim();
+        
+        steps.push(`Start with the equation: ${leftSide} = ${rightSide}`);
+        
+        // Move all terms with the variable to the left side
+        const algebriteExpr = expression.replace(/\*\*/g, '^');
+        const collectResult = algebrite.run(`collect(${leftSide} - (${rightSide}), ${variable})`);
+        steps.push(`Rearrange to standard form: ${collectResult} = 0`);
+        
+        // Solve for the variable
+        const solveResult = algebrite.run(`solve(${collectResult}, ${variable})`);
+        steps.push(`Solve for ${variable}: ${solveResult}`);
+        
+        return steps;
+        
+      case 'simplify':
+        steps.push(`Start with the expression: ${expression}`);
+        
+        // Use Algebrite for step-by-step simplification
+        const algebriteSimplify = expression.replace(/\*\*/g, '^');
+        const simplified = algebrite.simplify(algebriteSimplify).toString();
+        steps.push(`Simplify: ${simplified}`);
+        
+        return steps;
+        
+      case 'expand':
+        steps.push(`Start with the expression: ${expression}`);
+        
+        // Use Algebrite for expansion
+        const algebriteExpand = expression.replace(/\*\*/g, '^');
+        const expanded = algebrite.expand(algebriteExpand).toString();
+        steps.push(`Expand: ${expanded}`);
+        
+        return steps;
+        
+      case 'factor':
+        steps.push(`Start with the expression: ${expression}`);
+        
+        // Use Algebrite for factoring
+        const algebriteFactor = expression.replace(/\*\*/g, '^');
+        const factored = algebrite.factor(algebriteFactor).toString();
+        steps.push(`Factor: ${factored}`);
+        
+        return steps;
+        
+      case 'evaluate':
+        steps.push(`Start with the expression: ${expression}`);
+        
+        // Check if there are variables to substitute
+        if (expression.includes('@')) {
+          const [expr, substitutions] = expression.split('@').map(part => part.trim());
+          steps.push(`Substitute values: ${substitutions} into ${expr}`);
+          
+          // Evaluate with substitutions
+          const result = math.evaluate(expression);
+          steps.push(`Evaluate: ${result}`);
+        } else {
+          // Simple evaluation
+          const result = math.evaluate(expression);
+          steps.push(`Evaluate: ${result}`);
+        }
+        
+        return steps;
+        
+      default:
+        return [];
+    }
+  } catch (error) {
+    console.error('Error generating steps:', error);
+    return [];
+  }
+}
+
 // Routes
 app.post('/api/calculate', (req, res) => {
   try {
-    const { expression, operation } = req.body;
+    const { expression, operation, variable = 'x', steps: wantSteps = false } = req.body;
     
     let result;
+    let solutionSteps = [];
+    
+    // Generate steps if requested
+    if (wantSteps) {
+      solutionSteps = generateSteps(operation, expression, variable);
+    }
     
     switch (operation) {
       case 'solve':
@@ -165,47 +258,78 @@ app.post('/api/calculate', (req, res) => {
           const leftSide = equationParts[0].trim();
           const rightSide = equationParts[1].trim();
           
-          // Rearrange to standard form: expression = 0
-          const equation = `${leftSide} - (${rightSide})`;
+          // Try using Algebrite first for more complex equations
+          try {
+            const algebriteExpr = expression.replace(/\*\*/g, '^');
+            const solveResult = algebrite.run(`solve(${leftSide} - (${rightSide}), ${variable})`);
+            
+            // Format the result
+            if (solveResult.toString() !== '[]') {
+              result = solveResult.toString().replace(/\[|\]/g, '');
+              
+              // If multiple solutions, format them nicely
+              if (result.includes(',')) {
+                const solutions = result.split(',').map(sol => sol.trim());
+                result = solutions.join(', ');
+              }
+              
+              break;
+            }
+          } catch (algebriteError) {
+            console.log('Algebrite solving failed:', algebriteError);
+          }
           
-          // Solve for x
-          result = math.solve(equation, 'x');
+          // Fall back to mathjs
+          const equation = `${leftSide} - (${rightSide})`;
+          const solutions = math.solve(equation, variable);
+          
+          if (Array.isArray(solutions)) {
+            result = solutions.join(', ');
+          } else {
+            result = solutions.toString();
+          }
         } catch (error) {
           throw new Error(`Could not solve equation: ${error.message}`);
         }
         break;
         
       case 'simplify':
-        result = math.simplify(expression).toString();
+        try {
+          // Try Algebrite first
+          const algebriteExpr = expression.replace(/\*\*/g, '^');
+          const simplified = algebrite.simplify(algebriteExpr).toString();
+          
+          if (simplified !== algebriteExpr) {
+            result = simplified;
+            break;
+          }
+          
+          // Fall back to mathjs
+          result = math.simplify(expression).toString();
+        } catch (error) {
+          throw new Error(`Could not simplify expression: ${error.message}`);
+        }
         break;
         
       case 'expand':
         try {
-          // First try Algebrite for expansion (handles more complex cases)
-          try {
-            // Algebrite uses ^ for exponentiation
-            const algebriteExpr = expression.replace(/\*\*/g, '^');
-            const expanded = algebrite.expand(algebriteExpr).toString();
+          // Use Algebrite for expansion
+          const algebriteExpr = expression.replace(/\*\*/g, '^');
+          const expanded = algebrite.expand(algebriteExpr).toString();
+          
+          result = expanded;
+          
+          // If Algebrite returns the same expression, try our custom expansion
+          if (expanded === algebriteExpr) {
+            const customExpansion = expandPolynomial(expression);
             
-            // If Algebrite returns the same expression, it couldn't expand it
-            if (expanded !== algebriteExpr) {
-              result = expanded;
-              break;
+            if (customExpansion) {
+              result = customExpansion;
+            } else {
+              // Fall back to mathjs
+              const expandedExpr = math.parse(expression);
+              result = math.simplify(expandedExpr).toString();
             }
-          } catch (algebriteError) {
-            // Continue to other methods if Algebrite fails
-            console.log('Algebrite expansion failed:', algebriteError);
-          }
-          
-          // Try our custom polynomial expansion next
-          const customExpansion = expandPolynomial(expression);
-          
-          if (customExpansion) {
-            result = customExpansion;
-          } else {
-            // Fall back to mathjs for simpler cases
-            const expandedExpr = math.parse(expression);
-            result = math.simplify(expandedExpr).toString();
           }
         } catch (error) {
           throw new Error(`Could not expand expression: ${error.message}`);
@@ -213,19 +337,43 @@ app.post('/api/calculate', (req, res) => {
         break;
         
       case 'factor':
-        // mathjs doesn't have direct factoring, so we'll return a message
-        result = "Factoring is not directly supported in this version";
+        try {
+          // Use Algebrite for factoring
+          const algebriteExpr = expression.replace(/\*\*/g, '^');
+          const factored = algebrite.factor(algebriteExpr).toString();
+          
+          result = factored;
+        } catch (error) {
+          result = "Could not factor the expression. Try a different format.";
+        }
         break;
         
       case 'evaluate':
-        result = math.evaluate(expression);
+        try {
+          // Handle expressions with variable substitutions like "2x^2+2y @ x=5, y=3"
+          if (expression.includes('@')) {
+            result = math.evaluate(expression);
+          } else {
+            result = math.evaluate(expression);
+          }
+        } catch (error) {
+          throw new Error(`Could not evaluate expression: ${error.message}`);
+        }
+        break;
+        
+      case 'graph':
+        // For now, just return a message that graphing is not implemented
+        result = "Graphing is not implemented in this version.";
         break;
         
       default:
         throw new Error('Invalid operation');
     }
     
-    res.json({ result });
+    res.json({ 
+      result: result.toString(),
+      steps: solutionSteps
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

@@ -1,23 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
+import MathKeypad from './components/MathKeypad';
+import OperationTabs from './components/OperationTabs';
+import ExampleLinks from './components/ExampleLinks';
 
 function App() {
   const [expression, setExpression] = useState('');
-  const [operation, setOperation] = useState('evaluate');
+  const [operation, setOperation] = useState('solve');
   const [result, setResult] = useState('');
+  const [steps, setSteps] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showKeypad, setShowKeypad] = useState(false);
+  const [variable, setVariable] = useState('x');
+  const [showSteps, setShowSteps] = useState(false);
+
+  // Parse URL query parameters on load
+  useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const queryExpression = queryParams.get('q');
+    if (queryExpression) {
+      setExpression(decodeURIComponent(queryExpression));
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setError('');
     setResult('');
+    setSteps([]);
     setLoading(true);
+    setShowSteps(false);
 
     try {
-      const res = await axios.post('/api/calculate', { expression, operation });
+      const res = await axios.post('/api/calculate', { 
+        expression, 
+        operation,
+        variable,
+        steps: true
+      });
+      
       setResult(res.data.result);
+      if (res.data.steps) {
+        setSteps(res.data.steps);
+      }
+      
+      // Update URL with the current expression
+      const url = new URL(window.location);
+      url.searchParams.set('q', expression);
+      window.history.pushState({}, '', url);
     } catch (err) {
       setError(err.response?.data?.error || 'An error occurred');
     } finally {
@@ -25,70 +57,146 @@ function App() {
     }
   };
 
+  const handleOperationChange = (newOperation) => {
+    setOperation(newOperation);
+    setResult('');
+    setSteps([]);
+    setError('');
+  };
+
+  const handleKeypadInput = (value) => {
+    if (value === 'del') {
+      setExpression(prev => prev.slice(0, -1));
+    } else {
+      setExpression(prev => prev + value);
+    }
+  };
+
+  const handleExampleClick = (exampleExpression) => {
+    setExpression(exampleExpression);
+    // Auto-detect operation based on the expression
+    if (exampleExpression.includes('=')) {
+      setOperation('solve');
+    } else if (exampleExpression.includes('^') || exampleExpression.includes('(')) {
+      setOperation('simplify');
+    }
+  };
+
+  const toggleKeypad = () => {
+    setShowKeypad(!showKeypad);
+  };
+
+  const toggleSteps = () => {
+    setShowSteps(!showSteps);
+  };
+
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Algebra Calculator</h1>
+        <h1>MathPapa-style Algebra Calculator</h1>
       </header>
+      
       <main className="calculator-container">
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="operation">Operation:</label>
-            <select
-              id="operation"
-              value={operation}
-              onChange={(e) => setOperation(e.target.value)}
-              className="select-operation"
-            >
-              <option value="evaluate">Evaluate</option>
-              <option value="solve">Solve Equation</option>
-              <option value="simplify">Simplify</option>
-              <option value="expand">Expand</option>
-              <option value="factor">Factor</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="expression">
-              {operation === 'solve' 
-                ? 'Enter equation (e.g., x + 2 = 5):' 
-                : 'Enter expression:'}
-            </label>
+        <OperationTabs 
+          activeOperation={operation} 
+          onOperationChange={handleOperationChange} 
+        />
+        
+        <form onSubmit={handleSubmit} className="calculator-form">
+          <div className="input-container">
             <input
               type="text"
-              id="expression"
               value={expression}
               onChange={(e) => setExpression(e.target.value)}
               placeholder={operation === 'solve' ? 'x + 2 = 5' : '2x + 3'}
               className="expression-input"
               required
             />
+            <button 
+              type="button" 
+              className="keypad-toggle" 
+              onClick={toggleKeypad}
+            >
+              {showKeypad ? 'Hide Keypad' : 'Show Keypad'}
+            </button>
           </div>
-
+          
+          {operation === 'solve' && (
+            <div className="variable-selector">
+              <label>Solve for: </label>
+              <select 
+                value={variable} 
+                onChange={(e) => setVariable(e.target.value)}
+              >
+                <option value="x">x</option>
+                <option value="y">y</option>
+                <option value="z">z</option>
+                <option value="a">a</option>
+                <option value="b">b</option>
+              </select>
+            </div>
+          )}
+          
           <button type="submit" className="calculate-btn" disabled={loading}>
-            {loading ? 'Calculating...' : 'Calculate'}
+            {loading ? 'Calculating...' : 'Calculate it!'}
           </button>
         </form>
-
+        
+        {showKeypad && <MathKeypad onKeyPress={handleKeypadInput} />}
+        
         {error && <div className="error-message">{error}</div>}
         
         {result !== '' && (
           <div className="result-container">
-            <h3>Result:</h3>
+            <div className="result-header">
+              <h3>{operation === 'solve' ? `Solution for ${variable}:` : 'Result:'}</h3>
+              {steps.length > 0 && (
+                <button 
+                  className="steps-toggle-btn" 
+                  onClick={toggleSteps}
+                >
+                  {showSteps ? 'Hide Steps' : 'Show Steps'}
+                </button>
+              )}
+            </div>
             <div className="result">{result}</div>
+            
+            {showSteps && steps.length > 0 && (
+              <div className="steps-container">
+                <h4>Step-by-Step Solution:</h4>
+                <ol>
+                  {steps.map((step, index) => (
+                    <li key={index}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </div>
         )}
-
+        
+        <ExampleLinks onExampleClick={handleExampleClick} />
+        
         <div className="help-section">
-          <h3>Examples:</h3>
-          <ul>
-            <li><strong>Evaluate:</strong> 2 + 2 * 3</li>
-            <li><strong>Solve:</strong> x + 5 = 10</li>
-            <li><strong>Simplify:</strong> 2x + 3x</li>
-            <li><strong>Expand:</strong> (x+y)^3, (x+1)^2, or (a+b-c)^2</li>
+          <h3>How to Use the Calculator</h3>
+          <p>Type your algebra problem into the text box above, or use the keypad to enter expressions.</p>
+          <p>For example, enter <a href="#" onClick={() => handleExampleClick('3x+2=14')}>3x+2=14</a> to get a step-by-step explanation of how to solve 3x+2=14.</p>
+          
+          <h4>Math Symbols</h4>
+          <ul className="symbols-list">
+            <li><strong>+</strong> (Addition)</li>
+            <li><strong>-</strong> (Subtraction)</li>
+            <li><strong>*</strong> (Multiplication)</li>
+            <li><strong>/</strong> (Division)</li>
+            <li><strong>^</strong> (Exponent: "raised to the power")</li>
+            <li><strong>sqrt</strong> (Square Root) Example: sqrt(9)</li>
           </ul>
         </div>
       </main>
+      
+      <footer className="App-footer">
+        <p>Powered by Algebrite - A symbolic algebra engine</p>
+        <p>© 2025 Algebra Calculator</p>
+      </footer>
     </div>
   );
 }
