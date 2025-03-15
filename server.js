@@ -421,7 +421,9 @@ app.post('/api/calculate', (req, res) => {
     // Preprocess the expression to handle common formats
     let processedExpression = expression
       .replace(/\*\*/g, '^')      // Replace ** with ^ for exponentiation
-      .replace(/(\d)([a-zA-Z])/g, '$1*$2'); // Add * between numbers and variables (e.g., 2x -> 2*x)
+      .replace(/(\d)([a-zA-Z])/g, '$1*$2') // Add * between numbers and variables (e.g., 2x -> 2*x)
+      .replace(/([a-zA-Z])(\d)/g, '$1^$2') // Convert x2 to x^2 for convenience
+      .replace(/([a-zA-Z])\(/g, '$1*('); // Add * between variables and parentheses (e.g., x(y+1) -> x*(y+1))
     
     switch (operation) {
       case 'solve':
