@@ -106,18 +106,19 @@ function App() {
             <line x1="0" y1="-200" x2="0" y2="200" stroke="black" strokeWidth="1" />
             
             {/* Plot points */}
-            {graphInfo.points.map((point, index) => {
-              // Scale points to fit the SVG
-              const x = point.x * (250 / Math.max(10, Math.abs(graphInfo.range.max)));
-              const y = -point.y * (150 / Math.max(10, Math.abs(graphInfo.range.max)));
-              
-              // Draw points as a path
-              if (index === 0) {
-                return <path key="graph-path" d={`M ${x} ${y}`} stroke="blue" strokeWidth="2" fill="none" />;
-              } else {
-                return <path key="graph-path" d={`L ${x} ${y}`} stroke="blue" strokeWidth="2" fill="none" />;
-              }
-            })}
+            <path 
+              d={graphInfo.points.map((point, index) => {
+                // Scale points to fit the SVG
+                const x = point.x * (250 / Math.max(10, Math.abs(graphInfo.range.max)));
+                const y = -point.y * (150 / Math.max(10, Math.abs(graphInfo.range.max)));
+                
+                // Create path commands
+                return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+              }).join(' ')}
+              stroke="blue"
+              strokeWidth="2"
+              fill="none"
+            />
             
             {/* Axis labels */}
             <text x="280" y="15">x</text>

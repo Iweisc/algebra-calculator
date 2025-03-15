@@ -7,6 +7,9 @@ require('dotenv').config();
 // We'll use math.js more extensively and rely less on Algebrite
 const algebrite = require('algebrite');
 
+// Suppress deprecation warnings
+process.env.NODE_NO_WARNINGS = 1;
+
 // Wolfram Alpha API configuration
 const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
 const WOLFRAM_API_URL = 'https://api.wolframalpha.com/v2/query';
@@ -515,7 +518,7 @@ app.post('/api/calculate', async (req, res) => {
             const node = math.parse(`${leftSide} - (${rightSide})`);
             
             // Try to solve using math.js
-            const solutions = math.resolve(node, variable);
+            const solutions = math.simplify(node, {}, {context: {[variable]: true}});
             
             if (solutions && solutions.length > 0) {
               // Format the solutions
@@ -1192,8 +1195,8 @@ app.post('/api/calculate', async (req, res) => {
             try {
               // Create a default scope with common variables
               const defaultScope = {
-                a: 0, b: 0, c: 0, d: 0, m: 0, n: 0, p: 0, q: 0, r: 0, s: 0, t: 0,
-                x: 0, y: 0, z: 0
+                a: 1, b: 1, c: 1, d: 1, m: 1, n: 1, p: 1, q: 1, r: 1, s: 1, t: 1,
+                x: 1, y: 1, z: 1
               };
               
               // First simplify the expression
