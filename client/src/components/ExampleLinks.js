@@ -10,7 +10,10 @@ const ExampleLinks = ({ onExampleClick }) => {
     { text: '2x^2+2y @ x=5, y=3', expression: '2x^2+2y @ x=5, y=3' },
     { text: 'y=x^2+1', expression: 'y=x^2+1' },
     { text: '4x+2=2(x+6)', expression: '4x+2=2(x+6)' },
-    { text: '(a+b-c)^2', expression: '(a+b-c)^2' }
+    { text: '(a+b-c)^2', expression: '(a+b-c)^2' },
+    { text: 'x^2-4', expression: 'x^2-4' },
+    { text: 'sin(x) @ x=pi/4', expression: 'sin(x) @ x=pi/4' },
+    { text: 'x^2 @ x=-5:5', expression: 'x^2 @ x=-5:5' }
   ];
 
   return (

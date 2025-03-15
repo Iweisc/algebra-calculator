@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const math = require('mathjs');
 const path = require('path');
+// We'll use math.js more extensively and rely less on Algebrite
 const algebrite = require('algebrite');
 
 // Helper function for polynomial expansion
@@ -435,7 +436,32 @@ app.post('/api/calculate', (req, res) => {
           const leftSide = equationParts[0].trim();
           const rightSide = equationParts[1].trim();
           
-          // Try using Algebrite first for more complex equations
+          // Try using math.js first for solving equations
+          try {
+            // Create a math.js expression for the equation
+            const node = math.parse(`${leftSide} - (${rightSide})`);
+            
+            // Try to solve using math.js
+            const solutions = math.resolve(node, variable);
+            
+            if (solutions && solutions.length > 0) {
+              // Format the solutions
+              result = solutions.map(sol => {
+                // Try to simplify each solution
+                try {
+                  return math.simplify(sol.toString()).toString();
+                } catch (e) {
+                  return sol.toString();
+                }
+              }).join(', ');
+              
+              break;
+            }
+          } catch (mathError) {
+            console.log('Math.js solving failed:', mathError);
+          }
+          
+          // If math.js fails, try using Algebrite
           try {
             // First try direct solve
             let solveCmd = `solve(${leftSide} - (${rightSide}), ${variable})`;
@@ -475,24 +501,78 @@ app.post('/api/calculate', (req, res) => {
             console.log('Algebrite solving failed:', algebriteError);
           }
           
-          // Try another Algebrite approach for specific equation types
+          // Try a more direct approach with math.js
           try {
-            // For quadratic and other polynomial equations
-            if (processedExpression.includes('^2') || processedExpression.includes(`${variable}*${variable}`)) {
-              const polyCmd = `roots(${leftSide} - (${rightSide}), ${variable})`;
-              const polyResult = algebrite.run(polyCmd);
+            // For linear equations: ax + b = c
+            if (!processedExpression.includes('^') && !processedExpression.includes('*' + variable + '*' + variable)) {
+              // Create a scope with all variables except the one we're solving for
+              const scope = {};
+              const node = math.parse(`${leftSide} - (${rightSide})`);
+              const symbols = node.filter(node => node.isSymbolNode && node.name !== variable);
               
-              if (polyResult.toString() !== '[]') {
-                result = polyResult.toString().replace(/\[|\]/g, '');
+              // Extract symbols and set them to zero in the scope
+              symbols.forEach(symbol => {
+                if (symbol.name !== variable) {
+                  scope[symbol.name] = 0;
+                }
+              });
+              
+              // Try to solve the equation
+              const simplified = math.simplify(`${leftSide} - (${rightSide})`, scope);
+              const coeffNode = math.parse(simplified.toString().replace(new RegExp(`${variable}`, 'g'), '1'));
+              const constNode = math.parse(simplified.toString().replace(new RegExp(`[+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable}`, 'g'), '0'));
+              
+              const coeff = math.evaluate(coeffNode, scope);
+              const constant = math.evaluate(constNode, scope);
+              
+              if (coeff !== 0) {
+                result = math.format(-constant / coeff, {precision: 14});
                 break;
               }
             }
-          } catch (e) {
-            console.log('Polynomial solving failed:', e);
-          }
-          
-          // Fall back to mathjs
-          try {
+            
+            // For quadratic equations: ax^2 + bx + c = 0
+            if (processedExpression.includes('^2') || processedExpression.includes(`${variable}*${variable}`)) {
+              const equation = `${leftSide} - (${rightSide})`;
+              
+              // Try to extract coefficients
+              const expr = math.simplify(equation);
+              const exprStr = expr.toString();
+              
+              // Extract coefficients using regex
+              const aMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable}\\s*\\^\\s*2)`, 'g'));
+              const bMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable}(?!\\s*\\^))`, 'g'));
+              const cMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]+)(?!\\s*\\*?\\s*${variable})`, 'g'));
+              
+              if (aMatch) {
+                const a = math.evaluate(aMatch[0].replace(new RegExp(`\\*?\\s*${variable}\\s*\\^\\s*2`, 'g'), '')) || 1;
+                const b = bMatch ? math.evaluate(bMatch[0].replace(new RegExp(`\\*?\\s*${variable}`, 'g'), '')) || 1 : 0;
+                const c = cMatch ? math.evaluate(cMatch[0]) : 0;
+                
+                // Apply quadratic formula
+                const discriminant = b * b - 4 * a * c;
+                
+                if (discriminant >= 0) {
+                  const x1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+                  const x2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+                  
+                  if (x1 === x2) {
+                    result = x1.toString();
+                  } else {
+                    result = `${x1}, ${x2}`;
+                  }
+                  break;
+                } else {
+                  // Complex roots
+                  const realPart = -b / (2 * a);
+                  const imagPart = Math.sqrt(-discriminant) / (2 * a);
+                  result = `${realPart} + ${imagPart}i, ${realPart} - ${imagPart}i`;
+                  break;
+                }
+              }
+            }
+            
+            // If we get here, try one more approach with math.js
             const equation = `${leftSide} - (${rightSide})`;
             const solutions = math.solve(equation, variable);
             
@@ -504,7 +584,7 @@ app.post('/api/calculate', (req, res) => {
               throw new Error('No solutions found');
             }
           } catch (mathError) {
-            // If mathjs fails too, return a more helpful message
+            // If all approaches fail, return a more helpful message
             throw new Error(`Could not solve equation. Try simplifying your equation first.`);
           }
         } catch (error) {
@@ -514,37 +594,158 @@ app.post('/api/calculate', (req, res) => {
         
       case 'simplify':
         try {
-          // Try multiple Algebrite approaches for simplification
+          // Try math.js first for simplification
           try {
-            // First try standard simplify
-            let simplified = algebrite.simplify(processedExpression).toString();
+            // Parse the expression
+            const node = math.parse(processedExpression);
             
-            // If that doesn't change much, try rationalize for fractions
-            if (simplified === processedExpression || 
-                Math.abs(simplified.length - processedExpression.length) < 3) {
-              const rationalized = algebrite.run(`rationalize(${processedExpression})`).toString();
-              if (rationalized !== processedExpression && 
-                  rationalized !== '0' && 
-                  rationalized.length < simplified.length * 1.5) {
-                simplified = rationalized;
+            // Apply various simplification rules
+            const simplified = math.simplify(node, [
+              'n1*n2 -> n1*n2', // Multiply numbers
+              'n1/n2 -> n1/n2', // Divide numbers
+              'n1+n2 -> n1+n2', // Add numbers
+              'n1-n2 -> n1-n2', // Subtract numbers
+              'n1^n2 -> n1^n2', // Power numbers
+              '(n1+n2)+n3 -> n1+(n2+n3)', // Associative addition
+              '(n1*n2)*n3 -> n1*(n2*n3)', // Associative multiplication
+              'n1*(n2+n3) -> n1*n2+n1*n3', // Distributive property
+              'n1*(n2-n3) -> n1*n2-n1*n3', // Distributive property
+              'v*0 -> 0', // Multiply by 0
+              'v+0 -> v', // Add 0
+              'v-0 -> v', // Subtract 0
+              'v*1 -> v', // Multiply by 1
+              'v/1 -> v', // Divide by 1
+              'v^1 -> v', // Power of 1
+              'v^0 -> 1', // Power of 0
+              '0/v -> 0', // 0 divided by anything
+              '0^0 -> 1', // 0^0 = 1
+              'v/v -> 1', // Divide by self
+              'v-v -> 0', // Subtract self
+              'v+v -> 2*v', // Add self
+              'v*v -> v^2', // Multiply by self
+              'v*v^n -> v^(n+1)', // Multiply by power
+              'v^n*v^m -> v^(n+m)', // Multiply powers
+              'v^n/v^m -> v^(n-m)', // Divide powers
+              '(v^n)^m -> v^(n*m)', // Power of power
+              'v+(-v) -> 0', // Add negative
+              'v+(-c*v) -> (1-c)*v', // Add negative multiple
+              'v+c*v -> (1+c)*v', // Add multiple
+              'v-(-v) -> 2*v', // Subtract negative
+              'v-c*v -> (1-c)*v', // Subtract multiple
+              'c*v+d*v -> (c+d)*v', // Combine like terms
+              'c*v-d*v -> (c-d)*v', // Combine like terms
+              'v/(-c) -> -v/c', // Divide by negative
+              '-(-v) -> v', // Double negative
+              '-(v+w) -> -v-w', // Distribute negative
+              '-(v-w) -> -v+w', // Distribute negative
+              'v*(w/v) -> w', // Cancel in multiplication
+              '(w/v)*v -> w', // Cancel in multiplication
+              'v/(v*w) -> 1/w', // Cancel in division
+              '(v*w)/v -> w', // Cancel in division
+              '(v*w)/w -> v', // Cancel in division
+              'v*v^(-1) -> 1', // Multiply by reciprocal
+              'v^(-1)*v -> 1', // Multiply by reciprocal
+              'v/(v) -> 1', // Divide by self
+              'v/(-v) -> -1', // Divide by negative self
+              '(-v)/v -> -1', // Negative divided by self
+              '(-v)/(-v) -> 1', // Negative divided by negative self
+              '(v+w)/v -> 1+w/v', // Divide sum
+              '(v-w)/v -> 1-w/v', // Divide difference
+              'v/(v+w) -> 1/(1+w/v)', // Divide by sum
+              'v/(v-w) -> 1/(1-w/v)', // Divide by difference
+              'v*(v+w) -> v^2+v*w', // Multiply by sum
+              'v*(v-w) -> v^2-v*w', // Multiply by difference
+              '(v+w)^2 -> v^2+2*v*w+w^2', // Square of sum
+              '(v-w)^2 -> v^2-2*v*w+w^2', // Square of difference
+              '(v+w)*(v-w) -> v^2-w^2', // Product of sum and difference
+              'v^2-w^2 -> (v+w)*(v-w)', // Difference of squares
+              'v^2+2*v*w+w^2 -> (v+w)^2', // Perfect square trinomial (sum)
+              'v^2-2*v*w+w^2 -> (v-w)^2', // Perfect square trinomial (difference)
+              'v/w+x/w -> (v+x)/w', // Add fractions with same denominator
+              'v/w-x/w -> (v-x)/w', // Subtract fractions with same denominator
+              'v/(w*x) -> (v/w)/x', // Simplify complex fraction
+              '(v/w)/x -> v/(w*x)', // Simplify complex fraction
+              'v*(w/x) -> (v*w)/x', // Multiply by fraction
+              '(v/w)*x -> (v*x)/w', // Multiply fraction by term
+              'v/(w/x) -> (v*x)/w', // Divide by fraction
+              '(v/w)/(x/y) -> (v*y)/(w*x)', // Divide fractions
+              'v/(w/(x/y)) -> (v*x)/(w*y)', // Divide by complex fraction
+              'v*(w/(x*y)) -> (v*w)/(x*y)', // Multiply by complex fraction
+              'v/((w*x)/y) -> (v*y)/(w*x)', // Divide by complex fraction
+              'v/((w/x)*y) -> (v*x)/(w*y)', // Divide by complex fraction
+              'v/((w/x)/(y/z)) -> (v*y*z)/(w*x)', // Divide by complex fraction
+              'v/((w*x)/(y*z)) -> (v*y*z)/(w*x)', // Divide by complex fraction
+              'v/((w/x)*(y/z)) -> (v*x*z)/(w*y)', // Divide by complex fraction
+              'v/((w*x)*(y/z)) -> (v*z)/(w*x*y)', // Divide by complex fraction
+              'v/((w/x)/(y*z)) -> (v*x*y*z)/w', // Divide by complex fraction
+              'v/((w*x)/(y/z)) -> (v*y)/(w*x*z)', // Divide by complex fraction
+              'v/((w/x)*(y*z)) -> (v*x)/(w*y*z)', // Divide by complex fraction
+              'v/((w*x)*(y/z)) -> (v*z)/(w*x*y)', // Divide by complex fraction
+            ]);
+            
+            // Try to further simplify fractions
+            let simplifiedResult = simplified.toString();
+            
+            // If the result contains fractions, try to simplify them
+            if (simplifiedResult.includes('/')) {
+              try {
+                const fractionSimplified = math.rationalize(simplifiedResult).toString();
+                if (fractionSimplified !== simplifiedResult) {
+                  simplifiedResult = fractionSimplified;
+                }
+              } catch (e) {
+                // Keep the original simplification if rationalize fails
               }
             }
             
-            // Try another approach for expressions with roots
-            if (processedExpression.includes('sqrt')) {
-              const withoutRadicals = algebrite.run(`rationalize(${processedExpression})`).toString();
-              if (withoutRadicals !== processedExpression && 
-                  withoutRadicals !== '0' && 
-                  withoutRadicals.length < simplified.length * 1.5) {
-                simplified = withoutRadicals;
+            // If the result contains square roots, try to simplify them
+            if (simplifiedResult.includes('sqrt')) {
+              try {
+                const sqrtSimplified = math.simplify(simplifiedResult, {}, {exactFractions: false}).toString();
+                if (sqrtSimplified !== simplifiedResult && sqrtSimplified.length <= simplifiedResult.length * 1.2) {
+                  simplifiedResult = sqrtSimplified;
+                }
+              } catch (e) {
+                // Keep the original simplification if sqrt simplification fails
               }
             }
             
-            result = simplified;
-          } catch (algebriteError) {
-            console.log('Algebrite simplification failed:', algebriteError);
-            // Fall back to mathjs
-            result = math.simplify(expression).toString();
+            result = simplifiedResult;
+          } catch (mathError) {
+            console.log('Math.js simplification failed:', mathError);
+            
+            // Fall back to Algebrite
+            try {
+              // First try standard simplify
+              let simplified = algebrite.simplify(processedExpression).toString();
+              
+              // If that doesn't change much, try rationalize for fractions
+              if (simplified === processedExpression || 
+                  Math.abs(simplified.length - processedExpression.length) < 3) {
+                const rationalized = algebrite.run(`rationalize(${processedExpression})`).toString();
+                if (rationalized !== processedExpression && 
+                    rationalized !== '0' && 
+                    rationalized.length < simplified.length * 1.5) {
+                  simplified = rationalized;
+                }
+              }
+              
+              // Try another approach for expressions with roots
+              if (processedExpression.includes('sqrt')) {
+                const withoutRadicals = algebrite.run(`rationalize(${processedExpression})`).toString();
+                if (withoutRadicals !== processedExpression && 
+                    withoutRadicals !== '0' && 
+                    withoutRadicals.length < simplified.length * 1.5) {
+                  simplified = withoutRadicals;
+                }
+              }
+              
+              result = simplified;
+            } catch (algebriteError) {
+              console.log('Algebrite simplification failed:', algebriteError);
+              // Last resort: try basic math.js simplify
+              result = math.simplify(expression).toString();
+            }
           }
         } catch (error) {
           throw new Error(`Could not simplify expression: ${error.message}`);
@@ -553,53 +754,104 @@ app.post('/api/calculate', (req, res) => {
         
       case 'expand':
         try {
-          // Use Algebrite for expansion with multiple approaches
+          // Use math.js for expansion
           try {
-            // First try standard expand
-            let expanded = algebrite.expand(processedExpression).toString();
+            // Parse the expression
+            const node = math.parse(processedExpression);
             
-            // If that doesn't work well, try a different approach
-            if (expanded === processedExpression) {
-              // For expressions with multiple terms in parentheses
-              if (processedExpression.includes('(') && processedExpression.includes(')')) {
-                // Try multiplying out first
-                const multipliedOut = algebrite.run(`multiply(${processedExpression})`).toString();
-                if (multipliedOut !== processedExpression) {
-                  expanded = algebrite.expand(multipliedOut).toString();
-                }
+            // Try to expand using math.js
+            let expanded;
+            
+            // Check if it's a product of sums or a power of a sum
+            if (processedExpression.includes('(') && processedExpression.includes(')')) {
+              // Apply distributive property for products
+              expanded = math.simplify(node, [
+                'n1*n2 -> n1*n2', // Multiply numbers
+                'n1/n2 -> n1/n2', // Divide numbers
+                'n1+n2 -> n1+n2', // Add numbers
+                'n1-n2 -> n1-n2', // Subtract numbers
+                'n1^n2 -> n1^n2', // Power numbers
+                'n1*(n2+n3) -> n1*n2+n1*n3', // Distributive property
+                'n1*(n2-n3) -> n1*n2-n1*n3', // Distributive property
+                '(n1+n2)*n3 -> n1*n3+n2*n3', // Distributive property
+                '(n1-n2)*n3 -> n1*n3-n2*n3', // Distributive property
+                '(n1+n2)*(n3+n4) -> n1*n3+n1*n4+n2*n3+n2*n4', // Product of sums
+                '(n1-n2)*(n3+n4) -> n1*n3+n1*n4-n2*n3-n2*n4', // Product of difference and sum
+                '(n1+n2)*(n3-n4) -> n1*n3-n1*n4+n2*n3-n2*n4', // Product of sum and difference
+                '(n1-n2)*(n3-n4) -> n1*n3-n1*n4-n2*n3+n2*n4', // Product of differences
+                '(n1+n2)^2 -> n1^2+2*n1*n2+n2^2', // Square of sum
+                '(n1-n2)^2 -> n1^2-2*n1*n2+n2^2', // Square of difference
+                '(n1+n2)^3 -> n1^3+3*n1^2*n2+3*n1*n2^2+n2^3', // Cube of sum
+                '(n1-n2)^3 -> n1^3-3*n1^2*n2+3*n1*n2^2-n2^3', // Cube of difference
+                '(n1+n2+n3)^2 -> n1^2+n2^2+n3^2+2*n1*n2+2*n1*n3+2*n2*n3', // Square of trinomial
+              ]);
+            } else {
+              // For simpler expressions
+              expanded = math.simplify(node);
+            }
+            
+            // If the expansion didn't change anything, try a different approach
+            if (expanded.toString() === processedExpression) {
+              // Try using math.js expand function if available
+              if (typeof math.expand === 'function') {
+                expanded = math.expand(node);
+              } else {
+                // Apply more aggressive simplification rules
+                expanded = math.simplify(node, ['all']);
               }
             }
             
             // If still no change, try our custom expansion
-            if (expanded === processedExpression) {
+            if (expanded.toString() === processedExpression) {
               const customExpansion = expandPolynomial(expression);
               if (customExpansion) {
-                expanded = customExpansion;
+                result = customExpansion;
+                break;
               }
             }
             
-            // If still no change, try one more approach with mathjs
-            if (expanded === processedExpression) {
-              try {
+            result = expanded.toString();
+          } catch (mathError) {
+            console.log('Math.js expansion failed:', mathError);
+            
+            // Fall back to Algebrite
+            try {
+              // First try standard expand
+              let expanded = algebrite.expand(processedExpression).toString();
+              
+              // If that doesn't work well, try a different approach
+              if (expanded === processedExpression) {
+                // For expressions with multiple terms in parentheses
+                if (processedExpression.includes('(') && processedExpression.includes(')')) {
+                  // Try multiplying out first
+                  const multipliedOut = algebrite.run(`multiply(${processedExpression})`).toString();
+                  if (multipliedOut !== processedExpression) {
+                    expanded = algebrite.expand(multipliedOut).toString();
+                  }
+                }
+              }
+              
+              // If still no change, try our custom expansion
+              if (expanded === processedExpression) {
+                const customExpansion = expandPolynomial(expression);
+                if (customExpansion) {
+                  expanded = customExpansion;
+                }
+              }
+              
+              result = expanded;
+            } catch (algebriteError) {
+              console.log('Algebrite expansion failed:', algebriteError);
+              
+              // Try our custom expansion as last resort
+              const customExpansion = expandPolynomial(expression);
+              if (customExpansion) {
+                result = customExpansion;
+              } else {
+                // Fall back to basic math.js
                 const expandedExpr = math.parse(expression);
-                expanded = math.simplify(expandedExpr).toString();
-              } catch (e) {
-                // Keep the original if mathjs fails
+                result = math.simplify(expandedExpr).toString();
               }
-            }
-            
-            result = expanded;
-          } catch (algebriteError) {
-            console.log('Algebrite expansion failed:', algebriteError);
-            
-            // Try our custom expansion
-            const customExpansion = expandPolynomial(expression);
-            if (customExpansion) {
-              result = customExpansion;
-            } else {
-              // Fall back to mathjs
-              const expandedExpr = math.parse(expression);
-              result = math.simplify(expandedExpr).toString();
             }
           }
         } catch (error) {
@@ -609,55 +861,119 @@ app.post('/api/calculate', (req, res) => {
         
       case 'factor':
         try {
-          // Use Algebrite for factoring with multiple approaches
+          // Use math.js for factoring if possible
           try {
-            // First try standard factor
-            let factored = algebrite.factor(processedExpression).toString();
+            // First try to identify common factoring patterns using math.js
+            const node = math.parse(processedExpression);
             
-            // If that doesn't change anything, try factoring over complex numbers
-            if (factored === processedExpression) {
-              const complexFactored = algebrite.run(`factor(${processedExpression}, i)`).toString();
-              if (complexFactored !== processedExpression) {
-                factored = complexFactored;
-              }
-            }
+            // Try to factor using math.js simplify with factoring rules
+            let factored = math.simplify(node, [
+              'n1^2-n2^2 -> (n1+n2)*(n1-n2)', // Difference of squares
+              'n1^2+2*n1*n2+n2^2 -> (n1+n2)^2', // Perfect square trinomial (sum)
+              'n1^2-2*n1*n2+n2^2 -> (n1-n2)^2', // Perfect square trinomial (difference)
+              'n1^3+n2^3 -> (n1+n2)*(n1^2-n1*n2+n2^2)', // Sum of cubes
+              'n1^3-n2^3 -> (n1-n2)*(n1^2+n1*n2+n2^2)', // Difference of cubes
+              'n1*n3+n2*n3 -> (n1+n2)*n3', // Common factor
+              'n1*n3-n2*n3 -> (n1-n2)*n3', // Common factor
+            ]);
             
-            // If still no change, try another approach for specific forms
-            if (factored === processedExpression && processedExpression.includes('^2')) {
-              // Try to identify perfect square trinomials
-              const perfectSquareCmd = `factor_perfect_square(${processedExpression})`;
-              try {
-                const perfectSquare = algebrite.run(perfectSquareCmd).toString();
-                if (perfectSquare !== processedExpression && perfectSquare !== '0') {
-                  factored = perfectSquare;
+            // If factoring didn't change anything, try a different approach
+            if (factored.toString() === processedExpression) {
+              // Try to identify quadratic expressions
+              if (processedExpression.includes('^2')) {
+                // Try to extract coefficients for ax^2 + bx + c
+                const expr = math.simplify(processedExpression);
+                const exprStr = expr.toString();
+                
+                // Extract coefficients using regex
+                const aMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable}\\s*\\^\\s*2)`, 'g'));
+                const bMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]*\\s*\\*?\\s*${variable}(?!\\s*\\^))`, 'g'));
+                const cMatch = exprStr.match(new RegExp(`([+-]?\\s*[0-9.]+)(?!\\s*\\*?\\s*${variable})`, 'g'));
+                
+                if (aMatch) {
+                  const a = math.evaluate(aMatch[0].replace(new RegExp(`\\*?\\s*${variable}\\s*\\^\\s*2`, 'g'), '')) || 1;
+                  const b = bMatch ? math.evaluate(bMatch[0].replace(new RegExp(`\\*?\\s*${variable}`, 'g'), '')) || 1 : 0;
+                  const c = cMatch ? math.evaluate(cMatch[0]) : 0;
+                  
+                  // Check if it can be factored (discriminant is perfect square)
+                  const discriminant = b * b - 4 * a * c;
+                  
+                  if (discriminant >= 0 && Math.sqrt(discriminant) % 1 === 0) {
+                    // Can be factored with rational roots
+                    const sqrtDisc = Math.sqrt(discriminant);
+                    const r1 = (-b + sqrtDisc) / (2 * a);
+                    const r2 = (-b - sqrtDisc) / (2 * a);
+                    
+                    // Format the factored form
+                    if (a === 1) {
+                      factored = `(${variable}${r1 >= 0 ? '-' + r1 : '+' + (-r1)})(${variable}${r2 >= 0 ? '-' + r2 : '+' + (-r2)})`;
+                    } else {
+                      factored = `${a}(${variable}${r1 >= 0 ? '-' + r1 : '+' + (-r1)})(${variable}${r2 >= 0 ? '-' + r2 : '+' + (-r2)})`;
+                    }
+                  }
                 }
-              } catch (e) {
-                // Continue with original factorization
               }
             }
             
-            // If it's a polynomial, try polynomial factorization
-            if (factored === processedExpression) {
-              try {
-                const polyFactorCmd = `factorpoly(${processedExpression}, ${variable})`;
-                const polyFactor = algebrite.run(polyFactorCmd).toString();
-                if (polyFactor !== processedExpression && polyFactor !== '0') {
-                  factored = polyFactor;
+            // If math.js factoring didn't work, fall back to Algebrite
+            if (factored.toString() === processedExpression) {
+              throw new Error('Math.js factoring insufficient');
+            }
+            
+            result = factored.toString();
+          } catch (mathError) {
+            console.log('Math.js factoring failed:', mathError);
+            
+            // Fall back to Algebrite for factoring
+            try {
+              // First try standard factor
+              let factored = algebrite.factor(processedExpression).toString();
+              
+              // If that doesn't change anything, try factoring over complex numbers
+              if (factored === processedExpression) {
+                const complexFactored = algebrite.run(`factor(${processedExpression}, i)`).toString();
+                if (complexFactored !== processedExpression) {
+                  factored = complexFactored;
                 }
-              } catch (e) {
-                // Continue with original factorization
               }
+              
+              // If still no change, try another approach for specific forms
+              if (factored === processedExpression && processedExpression.includes('^2')) {
+                // Try to identify perfect square trinomials
+                const perfectSquareCmd = `factor_perfect_square(${processedExpression})`;
+                try {
+                  const perfectSquare = algebrite.run(perfectSquareCmd).toString();
+                  if (perfectSquare !== processedExpression && perfectSquare !== '0') {
+                    factored = perfectSquare;
+                  }
+                } catch (e) {
+                  // Continue with original factorization
+                }
+              }
+              
+              // If it's a polynomial, try polynomial factorization
+              if (factored === processedExpression) {
+                try {
+                  const polyFactorCmd = `factorpoly(${processedExpression}, ${variable})`;
+                  const polyFactor = algebrite.run(polyFactorCmd).toString();
+                  if (polyFactor !== processedExpression && polyFactor !== '0') {
+                    factored = polyFactor;
+                  }
+                } catch (e) {
+                  // Continue with original factorization
+                }
+              }
+              
+              result = factored;
+              
+              // If result is still the same as input, provide a more helpful message
+              if (result === processedExpression) {
+                result = "Expression may already be in factored form or cannot be factored further with current methods.";
+              }
+            } catch (algebriteError) {
+              console.log('Algebrite factoring failed:', algebriteError);
+              result = "Could not factor the expression. Try a different format.";
             }
-            
-            result = factored;
-            
-            // If result is still the same as input, provide a more helpful message
-            if (result === processedExpression) {
-              result = "Expression may already be in factored form or cannot be factored further with current methods.";
-            }
-          } catch (algebriteError) {
-            console.log('Algebrite factoring failed:', algebriteError);
-            result = "Could not factor the expression. Try a different format.";
           }
         } catch (error) {
           result = "Could not factor the expression. Try a different format.";
@@ -675,13 +991,34 @@ app.post('/api/calculate', (req, res) => {
             const scope = {};
             substitutions.split(',').forEach(sub => {
               const [varName, value] = sub.split('=').map(s => s.trim());
-              scope[varName] = parseFloat(value) || value; // Convert to number if possible
+              
+              // Try to parse the value as a number or expression
+              try {
+                scope[varName] = math.evaluate(value);
+              } catch (e) {
+                scope[varName] = value; // Keep as string if not evaluable
+              }
             });
             
-            // Try to evaluate with mathjs first
+            // Try to evaluate with mathjs
             try {
-              result = math.evaluate(expr, scope);
+              // First simplify the expression
+              const simplified = math.simplify(expr).toString();
+              
+              // Then evaluate with the scope
+              result = math.evaluate(simplified, scope);
+              
+              // Format the result nicely
+              if (typeof result === 'number') {
+                // For floating point precision issues
+                if (Math.abs(result - Math.round(result)) < 1e-10) {
+                  result = Math.round(result);
+                }
+                result = math.format(result, {precision: 14});
+              }
             } catch (mathError) {
+              console.log('Math.js evaluation failed:', mathError);
+              
               // If mathjs fails, try with Algebrite
               let algebriteExpr = expr;
               
@@ -699,8 +1036,23 @@ app.post('/api/calculate', (req, res) => {
           } else {
             // For direct evaluation without substitutions
             try {
-              result = math.evaluate(expression);
+              // First simplify the expression
+              const simplified = math.simplify(expression).toString();
+              
+              // Then evaluate
+              result = math.evaluate(simplified);
+              
+              // Format the result nicely
+              if (typeof result === 'number') {
+                // For floating point precision issues
+                if (Math.abs(result - Math.round(result)) < 1e-10) {
+                  result = Math.round(result);
+                }
+                result = math.format(result, {precision: 14});
+              }
             } catch (mathError) {
+              console.log('Math.js evaluation failed:', mathError);
+              
               // Try with Algebrite if mathjs fails
               try {
                 result = algebrite.run(`float(${processedExpression})`).toString();
@@ -715,8 +1067,61 @@ app.post('/api/calculate', (req, res) => {
         break;
         
       case 'graph':
-        // For now, just return a message that graphing is not implemented
-        result = "Graphing is not implemented in this version.";
+        try {
+          // For graphing, we'll return data points that can be plotted on the client side
+          const [expr, rangeStr] = expression.includes('@') 
+            ? expression.split('@').map(part => part.trim())
+            : [expression, 'x=-10:10'];
+          
+          // Parse the range
+          let variable = 'x';
+          let min = -10;
+          let max = 10;
+          let points = 100;
+          
+          if (rangeStr) {
+            const rangeMatch = rangeStr.match(/([a-zA-Z])=(-?[\d.]+):(-?[\d.]+)(?::(\d+))?/);
+            if (rangeMatch) {
+              [, variable, min, max, points] = rangeMatch;
+              min = parseFloat(min);
+              max = parseFloat(max);
+              points = points ? parseInt(points) : 100;
+            }
+          }
+          
+          // Generate data points
+          const step = (max - min) / points;
+          const dataPoints = [];
+          
+          try {
+            // Compile the expression for faster evaluation
+            const compiledExpr = math.compile(expr);
+            
+            for (let i = 0; i <= points; i++) {
+              const x = min + i * step;
+              try {
+                const y = compiledExpr.evaluate({ [variable]: x });
+                if (!isNaN(y) && isFinite(y)) {
+                  dataPoints.push({ x, y });
+                }
+              } catch (e) {
+                // Skip points that can't be evaluated
+              }
+            }
+            
+            // Return the data points as JSON
+            result = JSON.stringify({
+              expression: expr,
+              variable,
+              range: { min, max },
+              points: dataPoints
+            });
+          } catch (mathError) {
+            throw new Error(`Could not graph expression: ${mathError.message}`);
+          }
+        } catch (error) {
+          result = "Could not graph the expression. Check the syntax and try again.";
+        }
         break;
         
       default:

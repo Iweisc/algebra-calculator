@@ -90,6 +90,46 @@ function App() {
     setShowSteps(!showSteps);
   };
 
+  const [graphData, setGraphData] = useState(null);
+
+  // Function to handle graph data
+  const renderGraph = (data) => {
+    if (!data) return null;
+    
+    try {
+      const graphInfo = JSON.parse(data);
+      return (
+        <div className="graph-container">
+          <svg width="600" height="400" viewBox="-300 -200 600 400">
+            {/* X and Y axes */}
+            <line x1="-300" y1="0" x2="300" y2="0" stroke="black" strokeWidth="1" />
+            <line x1="0" y1="-200" x2="0" y2="200" stroke="black" strokeWidth="1" />
+            
+            {/* Plot points */}
+            {graphInfo.points.map((point, index) => {
+              // Scale points to fit the SVG
+              const x = point.x * (250 / Math.max(10, Math.abs(graphInfo.range.max)));
+              const y = -point.y * (150 / Math.max(10, Math.abs(graphInfo.range.max)));
+              
+              // Draw points as a path
+              if (index === 0) {
+                return <path key="graph-path" d={`M ${x} ${y}`} stroke="blue" strokeWidth="2" fill="none" />;
+              } else {
+                return <path key="graph-path" d={`L ${x} ${y}`} stroke="blue" strokeWidth="2" fill="none" />;
+              }
+            })}
+            
+            {/* Axis labels */}
+            <text x="280" y="15">x</text>
+            <text x="15" y="-180">y</text>
+          </svg>
+        </div>
+      );
+    } catch (e) {
+      return <div className="error-message">Could not render graph</div>;
+    }
+  };
+
   return (
     <div className="App">
       <header className="App-header">
@@ -108,7 +148,11 @@ function App() {
               type="text"
               value={expression}
               onChange={(e) => setExpression(e.target.value)}
-              placeholder={operation === 'solve' ? 'x + 2 = 5' : '2x + 3'}
+              placeholder={
+                operation === 'solve' ? 'x + 2 = 5' : 
+                operation === 'graph' ? 'x^2 + 2*x @ x=-5:5' : 
+                '2x + 3'
+              }
               className="expression-input"
               required
             />
@@ -137,6 +181,12 @@ function App() {
             </div>
           )}
           
+          {operation === 'graph' && (
+            <div className="graph-hint">
+              <small>Format: expression @ variable=min:max (e.g., x^2 @ x=-5:5)</small>
+            </div>
+          )}
+          
           <button type="submit" className="calculate-btn" disabled={loading}>
             {loading ? 'Calculating...' : 'Calculate it!'}
           </button>
@@ -146,7 +196,7 @@ function App() {
         
         {error && <div className="error-message">{error}</div>}
         
-        {result !== '' && (
+        {result !== '' && operation !== 'graph' && (
           <div className="result-container">
             <div className="result-header">
               <h3>{operation === 'solve' ? `Solution for ${variable}:` : 'Result:'}</h3>
@@ -171,6 +221,15 @@ function App() {
                 </ol>
               </div>
             )}
+          </div>
+        )}
+        
+        {operation === 'graph' && result !== '' && (
+          <div className="result-container">
+            <div className="result-header">
+              <h3>Graph:</h3>
+            </div>
+            {renderGraph(result)}
           </div>
         )}
         
