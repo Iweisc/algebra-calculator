@@ -689,7 +689,17 @@ app.post('/api/calculate', async (req, res) => {
           
           // Try math.js if Wolfram Alpha fails or isn't available
           try {
-            // Parse the expression
+            // Check if this is a symbolic expression with variables like a, b
+            const hasSymbolicVars = /[a-df-wyz]/.test(processedExpression); // Excludes e and x which are special in math.js
+            
+            if (hasSymbolicVars) {
+              // For symbolic expressions with variables like a, b, use Algebrite
+              const algebriteResult = algebrite.simplify(processedExpression).toString();
+              result = algebriteResult;
+              break;
+            }
+            
+            // For other expressions, use math.js
             const node = math.parse(processedExpression);
             
             // Apply various simplification rules
@@ -851,7 +861,7 @@ app.post('/api/calculate', async (req, res) => {
           if (WOLFRAM_APP_ID && (
               expression.includes('^3') || 
               expression.includes('^4') || 
-              expression.includes('a') && expression.includes('b'))) {
+              /[a-df-wyz]/.test(expression))) { // Check for symbolic variables
             try {
               const wolframQuery = `expand ${expression}`;
               const wolframData = await queryWolframAlpha(wolframQuery);
@@ -977,7 +987,7 @@ app.post('/api/calculate', async (req, res) => {
           if (WOLFRAM_APP_ID && (
               expression.includes('^3') || 
               expression.includes('^4') || 
-              expression.includes('a') && expression.includes('b'))) {
+              /[a-df-wyz]/.test(expression))) { // Check for symbolic variables
             try {
               const wolframQuery = `factor ${expression}`;
               const wolframData = await queryWolframAlpha(wolframQuery);
@@ -1140,11 +1150,17 @@ app.post('/api/calculate', async (req, res) => {
             
             // Try to evaluate with mathjs
             try {
+              // Create a scope with default values for common variables
+              const fullScope = {
+                a: 0, b: 0, c: 0, d: 0, m: 0, n: 0, p: 0, q: 0, r: 0, s: 0, t: 0,
+                ...scope
+              };
+              
               // First simplify the expression
               const simplified = math.simplify(expr).toString();
               
               // Then evaluate with the scope
-              result = math.evaluate(simplified, scope);
+              result = math.evaluate(simplified, fullScope);
               
               // Format the result nicely
               if (typeof result === 'number') {
@@ -1174,19 +1190,33 @@ app.post('/api/calculate', async (req, res) => {
           } else {
             // For direct evaluation without substitutions
             try {
+              // Create a default scope with common variables
+              const defaultScope = {
+                a: 0, b: 0, c: 0, d: 0, m: 0, n: 0, p: 0, q: 0, r: 0, s: 0, t: 0,
+                x: 0, y: 0, z: 0
+              };
+              
               // First simplify the expression
               const simplified = math.simplify(expression).toString();
               
-              // Then evaluate
-              result = math.evaluate(simplified);
+              // Check if this is a symbolic expression (contains letters)
+              const hasVariables = /[a-zA-Z]/.test(simplified);
               
-              // Format the result nicely
-              if (typeof result === 'number') {
-                // For floating point precision issues
-                if (Math.abs(result - Math.round(result)) < 1e-10) {
-                  result = Math.round(result);
+              if (hasVariables) {
+                // For symbolic expressions, use Algebrite instead
+                result = algebrite.run(`${processedExpression}`).toString();
+              } else {
+                // For numeric expressions, use math.js
+                result = math.evaluate(simplified, defaultScope);
+                
+                // Format the result nicely
+                if (typeof result === 'number') {
+                  // For floating point precision issues
+                  if (Math.abs(result - Math.round(result)) < 1e-10) {
+                    result = Math.round(result);
+                  }
+                  result = math.format(result, {precision: 14});
                 }
-                result = math.format(result, {precision: 14});
               }
             } catch (mathError) {
               console.log('Math.js evaluation failed:', mathError);
